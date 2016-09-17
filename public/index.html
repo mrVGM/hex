@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="ISO-8859-1">
+<title>Hex</title>
+<link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+	<div class="centered" id="content"></div>
+	
+		
+	<script type="text/javascript" src="/js/simplepeer.js"></script>
+	<script type="text/javascript" src="/js/jquery.js"></script>
+	<script type="text/javascript" src="/js/geometry.js"></script>
+	<script type="text/javascript" src="/js/game.js"></script>
+	<script type="text/javascript">
+		
+		var state = 'home';
+		var ws;
+		var env = {};
+		
+		function initRTC() {
+			ws = new WebSocket("wss://hex-vhdah.c9users.io:8081");
+			ws.onopen = function () {
+				waitingForOpponent();
+			};
+			
+			ws.onmessage = function(message) {
+				
+				function onConnect() {
+					state = 'connected';
+					console.log('connected');
+					
+					function getRandomIntInclusive(min, max) {
+						min = Math.ceil(min);
+					    max = Math.floor(max);
+					    return Math.floor(Math.random() * (max - min + 1)) + min;
+					}
+					
+					env.actions = {
+						number: function(data) {
+							
+							oth = parseInt(data + "");
+							if (env.myId < oth) {
+								console.log("You are 0");
+								env.myId = 0;
+								env.game.myTurn = true;
+								env.game.myColors = ['rgb(255, 0, 0)', 'rgba(255, 0, 0, 0.4)'];
+								env.game.otherColors = ['rgb(0, 255, 0)', 'rgba(255, 0, 0, 0.4)'];
+								
+								$("#content").empty();
+								GAME.loadBoard();
+											
+								GAME.startTimer();
+								//myTurn = true;
+								//game.loadBoard();
+								//game.startTimer();
+								return;
+							}
+							if (env.myId > oth) {
+								console.log("You are 1");
+								env.myId = 1;
+								env.game.myColors = ['rgb(0, 255, 0)', 'rgba(0, 255, 0, 0.4)'];
+								env.game.otherColors = ['rgb(255, 0, 0)', 'rgba(255, 0, 0, 0.4)'];
+								env.game.myTurn = false;
+								
+								$("#content").empty();
+								GAME.loadBoard();
+								
+								//myTurn = false;
+								//game.loadBoard();
+								return;
+							}
+							env.myId = getRandomIntInclusive(0, 999);
+							env.peer.send(JSON.stringify({action: 'number', data: env.myId}));
+							
+						},
+						
+						move: function (data) {
+							if (data.i !== -1) {
+								
+								console.log(data.i + ":" + data.j);
+								env.game.hexs[data.i][data.j].owner = (env.myId === 0) ? 1 : 0;
+								env.game.hexs[data.i][data.j].drawFilled(env.game.contextBackground, env.game.otherColors[0]);
+								
+								var isFin = GAME.isFinal(data.i, data.j);
+								if (isFin !== undefined) {
+									if (isFin === env.myId) {
+										loadVictory();
+										return;
+									}
+									if (isFin !== 2) {
+										loadLoss();
+										return;
+									}
+								}
+								
+							}
+							
+							env.game.myTurn = true;
+							GAME.startTimer();
+						}
+					}
+					
+					function onData(data) {
+						var obj = JSON.parse(data);
+						env.actions[obj.action](obj.data);
+					}
+					
+					env.peer.on('data', onData);
+					env.peer.on('close', function(data) {
+					    if (state === 'connected') {
+					    	loadVictory();
+					    }
+					});
+					
+					env.game = {};
+					
+					env.myId = getRandomIntInclusive(0, 999);
+					env.peer.send(JSON.stringify({action: 'number', data: env.myId}));
+					
+				}
+				
+				
+				
+				if (message.data === 'offer') {
+					env.peer = new SimplePeer({ initiator: true, trickle: false});
+					
+					env.peer.on('signal', function (data) {
+						ws.send(JSON.stringify(data));
+					});
+				
+					env.peer.on('connect', onConnect);
+				}
+				else {
+					
+					state = 'received peer info';
+					
+					if (env.peer === undefined) {
+						env.peer = new SimplePeer({ initiator: false, trickle: false});
+						
+						env.peer.on('signal', function (data) {
+							ws.send(JSON.stringify(data));
+						});
+					
+						env.peer.on('connect', onConnect);
+					}
+					env.peer.signal(JSON.parse(message.data));
+				}
+			}
+			
+			ws.onclose = function() {
+				ws = undefined;
+				if (state === 'home') {
+					return;
+				}
+				if (state != 'received peer info' && state != 'connected') {
+					initRTC();
+				}
+			}
+			
+		}
+		
+		
+		$("#play").click(function() {
+			if (state === 'connecting') {
+				return;
+			}
+			if (state == 'home') {
+				state = 'connecting';
+				initRTC();
+			}
+		});
+		
+		function loadHome() {
+			$("#content").empty();
+			var button = $('<button>Play</button>');
+			button.attr('id', 'play');
+			button.addClass("button-large");
+			state = "home";
+			button.on('click', function(argument) {
+				
+				if (state === 'connecting') {
+					return;
+				}
+				if (state == 'home') {
+					state = 'connecting';
+					initRTC();
+				}
+			});
+			
+			$("#content").append(button);
+		}
+		
+		function waitingForOpponent() {
+			var content = $("#content");
+			content.empty();
+			
+			var wrap = $('<div></div>');
+			
+			
+			var wfo = $("<h1>Waiting for opponent ...</h1>");
+			wrap.append(wfo);
+			var cancel = $('<button>Cancel</button>');
+			cancel.attr('id', 'cancel');
+			cancel.addClass('button');
+			cancel.addClass('horizontal-centered');
+			cancel.on('click', function() {
+				state = "home";
+				if (ws !== undefined) {
+					ws.close();
+				}
+				loadHome();
+			});
+			wrap.append(cancel);
+			content.append(wrap);
+		}
+		
+		function loadVictory() {
+			var content = $("#content");
+			content.empty();
+			env = {};
+			var victory = $('<h1>You won</h1>');
+			content.append(victory);
+			setTimeout(loadHome, 1000);
+		}
+		
+		function loadLoss() {
+			var content = $("#content");
+			content.empty();
+			env = {};
+			var victory = $('<h1>You los</h1>');
+			content.append(victory);
+			setTimeout(loadHome, 1000);
+		}
+		
+		loadHome();
+		
+	</script>
+	
+	</body>
+</html>

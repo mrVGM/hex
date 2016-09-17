@@ -1,0 +1,21 @@
+.centered {
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+}
+
+.button-large {
+    width: 200px;
+    height: 80px;
+}
+
+.button {
+    width: 100px;
+    height: 40px;
+}
+
+.horizontal-centered {
+    margin-left: 50%;
+    transform: translate(-50%, 0%);
+}
